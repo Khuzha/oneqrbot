@@ -2,11 +2,11 @@ const Telegraf = require('telegraf')
 const mongo = require('mongodb').MongoClient
 const axios = require('axios')
 const unirest = require('unirest')
+const data = require('./data')
 const session = require('telegraf/session')
 const Stage = require('telegraf/stage')
 const Scene = require('telegraf/scenes/base')
 const { leave } = Stage
-const data = require('./data')
 const stage = new Stage()
 const bot = new Telegraf(data.token)
 
@@ -52,30 +52,36 @@ scan.enter((ctx) => {
 
 
 scan.on('photo', async (ctx) => {
+  ctx.replyWithChatAction('typing')
+
   const imageData = await bot.telegram.getFile(ctx.message.photo[ctx.message.photo.length - 1].file_id)
 
-  let response = await axios({
+  axios({
     url: `https://api.qrserver.com/v1/read-qr-code/?fileurl=https://api.telegram.org/file/bot${data.token}/${imageData.file_path}`,
     method: 'GET'
   })
-  
-  if (response.data[0].symbol[0].error === null) {
-    await ctx.reply('Scanned data:')
-    await ctx.reply(response.data[0].symbol[0].data)
-  } else {
-    await ctx.reply('No data found on this picture.')
-  }
+    .then(async (response) => {
+      if (response.data[0].symbol[0].error === null) {
+        await ctx.reply('Scanned data:')
+        await ctx.reply(response.data[0].symbol[0].data)
+      } else {
+        await ctx.reply('No data found on this picture.')
+      }
+    
+      ctx.reply('You can send me other pictures or tap "⬅️ Back"')
 
-  ctx.reply('You can send me other pictures or tap "⬅️ Back"')
-  updateUser(ctx)
+      updateStat('scanning')
+      updateUser(ctx, true)
+    })
+    .catch((err) => {
+      ctx.reply('No data found on this picture.')
+      sendError(err, ctx)
+    })
 })
 
 scan.hears('⬅️ Back', (ctx) => {
-  ctx.scene.leave('scan')
-})
-
-scan.leave((ctx) => {
   starter(ctx)
+  ctx.scene.leave('scan')
 })
 
 
@@ -87,22 +93,52 @@ generate.enter((ctx) => {
 })
 
 generate.hears('⬅️ Back', (ctx) => {
+  starter(ctx)
   ctx.scene.leave('generate')
 })
 
 generate.on('text', async (ctx) => {
+  if (ctx.message.text.length > 900) {
+    return ctx.reply('Your text is too long. Please send text that contains not more than 900 symbols.')
+  }
+
   ctx.replyWithChatAction('upload_photo')
 
-  let response = await axios.get(`http://api.qrserver.com/v1/create-qr-code/?data=${ctx.message.text}&size=300x300`)
+  axios.get(`http://api.qrserver.com/v1/create-qr-code/?data=${encodeURI(ctx.message.text)}&size=300x300`)
+    .then(async (response) => {
+      await ctx.replyWithPhoto(`http://api.qrserver.com/v1/create-qr-code/?data=${encodeURI(ctx.message.text)}&size=300x300`, { caption: 'Generated via @OneQRBot' })
+      ctx.reply('You can send me another text or tap "⬅️ Back"')
+    
+      updateStat('generating')
+      updateUser(ctx, true)
+    })
+    .catch(async (err) => {
+      console.log(err)
+      await ctx.reply('Data you sent isn`t valid. Please check that and try again.')
+      ctx.reply('You can send me another text or tap "⬅️ Back"')
 
-  await ctx.replyWithPhoto(`http://api.qrserver.com/v1/create-qr-code/?data=${ctx.message.text}&size=300x300`, { caption: 'Generated via @OneQRBot' })
-  ctx.reply('You can send me another text or tap "⬅️ Back"')
-
-  updateUser(ctx)
+      sendError(`Generating error by message ${ctx.message.text}: \n\n ${err.toString()}`, ctx)
+    })  
 })
 
-generate.leave((ctx) => {
-  starter(ctx)
+
+bot.hears('📈 Statistic', async (ctx) => {
+  let allUsers = (await db.collection('allUsers').find({}).toArray()).length
+  let activeUsers = (await db.collection('allUsers').find({status: 'active'}).toArray()).length
+  let blockedUsers = (await db.collection('allUsers').find({status: 'blocked'}).toArray()).length
+  let scanned = await db.collection('statistic').find({genAct: 'scanning'}).toArray()
+  let generated = await db.collection('statistic').find({genAct: 'generating'}).toArray()
+  
+  ctx.reply(
+    `👥 <strong>Total users: ${allUsers}</strong>` +
+    `\n🤴 Active users: ${activeUsers} - ${Math.round((activeUsers / allUsers) * 100)}%` +
+    `\n🧛‍♂️ Blocked users: ${blockedUsers} - ${Math.round((blockedUsers / allUsers) * 100)}%` +
+
+    `\n\n🕹 <strong>All actions: ${scanned[0].count + generated[0].count}</strong>` +
+    `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
+    `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%`,
+    {parse_mode: 'html'}
+  )
 })
 
 
@@ -115,11 +151,10 @@ bot.command('users', async (ctx) => {
     await bot.telegram.sendChatAction(key.userId, 'typing')
       .then((res) => {
         activeUsers++
-        console.log(key)
       })
       .catch((err) => {
         blockedUsers++
-        db.collection('allUsers').updateOne({userId: key.userId}, {$set: {status: 'blocked'}}, {upsert: true})
+        updateUser(ctx, false)
       })
   }
 
@@ -131,6 +166,8 @@ bot.command('users', async (ctx) => {
 })
 
 bot.on('message', async (ctx) => {
+  ctx.scene.leave('scan')
+  ctx.scene.leave('generator')
   starter(ctx)
 })
 
@@ -138,12 +175,26 @@ bot.on('message', async (ctx) => {
 function starter (ctx) {
   ctx.reply(
     'Hi! What want you to do?', 
-    { reply_markup: { keyboard: [['🔍 Scan QR Code'], ['🖊 Generate QR Code']], resize_keyboard: true } }
+    { reply_markup: { keyboard: [['🔍 Scan QR Code'], ['🖊 Generate QR Code'], ['📈 Statistic']], resize_keyboard: true } }
   )
 
-  updateUser(ctx)
+  updateUser(ctx, true)
 }
 
-function updateUser (ctx) {
-  db.collection('allUsers').updateOne({userId: ctx.from.id}, {$set: {status: 'active'}}, {upsert: true, new: true})
+function updateUser (ctx, active) {
+  let jetzt = active ? 'active' : 'blocked'
+  db.collection('allUsers').updateOne({userId: ctx.from.id}, {$set: {status: jetzt}}, {upsert: true, new: true})
+}
+
+function updateStat (action) {
+  let date = Date.now()
+  db.collection('statistic').updateOne({action: action}, {$inc: {[date]: 1}}, {new: true, upsert: true})
+  db.collection('statistic').updateOne({genAct: action}, {$inc: {count: 1}}, {new: true, upsert: true})
+}
+
+function sendError (err, ctx) {
+  if (err.toString().includes('message is not modified')) {
+    return
+  }
+  bot.telegram.sendMessage(data.dev, `Ошибка у [${ctx.from.first_name}](tg://user?id=${ctx.from.id}) \n\nОшибка: ${err}`, { parse_mode: 'markdown' })
 }
