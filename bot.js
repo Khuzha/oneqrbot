@@ -140,7 +140,7 @@ bot.hears('📈 Statistic', async (ctx) => {
     `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
     `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
 
-    `\n\n📅 Actions today: ${+todayScans + +todayGens} - ${Math.round((+todayScans + +todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all` +
+    `\n\n📅 <strong>Actions today: ${+todayScans + +todayGens} - ${Math.round((+todayScans + +todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all</strong>` +
     `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (+todayScans + +todayGens)) * 100)}%` +
     `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (+todayScans + +todayGens)) * 100)}%`,
     {parse_mode: 'html'}
