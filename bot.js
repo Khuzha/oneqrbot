@@ -123,12 +123,14 @@ generate.on('text', async (ctx) => {
 
 
 bot.hears('📈 Statistic', async (ctx) => {
-  let allUsers = (await db.collection('allUsers').find({}).toArray()).length
-  let activeUsers = (await db.collection('allUsers').find({status: 'active'}).toArray()).length
-  let blockedUsers = (await db.collection('allUsers').find({status: 'blocked'}).toArray()).length
-  let scanned = await db.collection('statistic').find({genAct: 'scanning'}).toArray()
-  let generated = await db.collection('statistic').find({genAct: 'generating'}).toArray()
-  
+  const allUsers = (await db.collection('allUsers').find({}).toArray()).length
+  const activeUsers = (await db.collection('allUsers').find({status: 'active'}).toArray()).length
+  const blockedUsers = (await db.collection('allUsers').find({status: 'blocked'}).toArray()).length
+  const todayScans = (await db.collection('statistic').find({action: 'scanning'}).toArray())[0][makeDate()]
+  const todayGens = (await db.collection('statistic').find({action: 'generating'}).toArray())[0][makeDate()]
+  const scanned = await db.collection('statistic').find({genAct: 'scanning'}).toArray()
+  const generated = await db.collection('statistic').find({genAct: 'generating'}).toArray()
+
   ctx.reply(
     `👥 <strong>Total users: ${allUsers}</strong>` +
     `\n🤴 Active users: ${activeUsers} - ${Math.round((activeUsers / allUsers) * 100)}%` +
@@ -136,7 +138,11 @@ bot.hears('📈 Statistic', async (ctx) => {
 
     `\n\n🕹 <strong>All actions: ${scanned[0].count + generated[0].count}</strong>` +
     `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
-    `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%`,
+    `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
+
+    `\n\n📅 Actions today: ${+todayScans + +todayGens} - ${Math.round((+todayScans + +todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all` +
+    `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (+todayScans + +todayGens)) * 100)}%` +
+    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (+todayScans + +todayGens)) * 100)}%`,
     {parse_mode: 'html'}
   )
 })
@@ -187,9 +193,19 @@ function updateUser (ctx, active) {
 }
 
 function updateStat (action) {
-  let date = Date.now()
-  db.collection('statistic').updateOne({action: action}, {$inc: {[date]: 1}}, {new: true, upsert: true})
+  db.collection('statistic').updateOne({action: action}, {$inc: {[makeDate()]: 1}}, {new: true, upsert: true})
   db.collection('statistic').updateOne({genAct: action}, {$inc: {count: 1}}, {new: true, upsert: true})
+}
+
+function makeDate () {
+  const today = new Date()
+  const yyyy = today.getFullYear()
+  let mm = today.getMonth() + 1
+  let dd = today.getDate()
+
+  dd < 10 ? dd = '0' + dd : false
+  mm < 10 ? mm = '0' + mm : false
+  return `${mm}/${dd}/${yyyy}`
 }
 
 function sendError (err, ctx) {
