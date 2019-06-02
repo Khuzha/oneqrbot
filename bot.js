@@ -126,10 +126,13 @@ bot.hears('📈 Statistic', async (ctx) => {
   const allUsers = (await db.collection('allUsers').find({}).toArray()).length
   const activeUsers = (await db.collection('allUsers').find({status: 'active'}).toArray()).length
   const blockedUsers = (await db.collection('allUsers').find({status: 'blocked'}).toArray()).length
-  const todayScans = (await db.collection('statistic').find({action: 'scanning'}).toArray())[0][makeDate()]
-  const todayGens = (await db.collection('statistic').find({action: 'generating'}).toArray())[0][makeDate()]
   const scanned = await db.collection('statistic').find({genAct: 'scanning'}).toArray()
   const generated = await db.collection('statistic').find({genAct: 'generating'}).toArray()
+  let todayScans = +(await db.collection('statistic').find({action: 'scanning'}).toArray())[0][makeDate()]
+  let todayGens = +(await db.collection('statistic').find({action: 'generating'}).toArray())[0][makeDate()]
+
+  !todayScans ? todayScans = 0 : false
+  !todayGens ? todayGens = 0 : false
 
   ctx.reply(
     `👥 <strong>Total users: ${allUsers}</strong>` +
@@ -140,9 +143,9 @@ bot.hears('📈 Statistic', async (ctx) => {
     `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
     `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
 
-    `\n\n📅 <strong>Actions today: ${+todayScans + +todayGens} - ${Math.round((+todayScans + +todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all</strong>` +
-    `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (+todayScans + +todayGens)) * 100)}%` +
-    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (+todayScans + +todayGens)) * 100)}%`,
+    `\n\n📅 <strong>Actions today: ${todayScans + todayGens} - ${Math.round((todayScans + todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all</strong>` +
+    `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (todayScans + todayGens)) * 100)}%` +
+    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (todayScans + todayGens)) * 100)}%`,
     {parse_mode: 'html'}
   )
 })
