@@ -1,8 +1,9 @@
 const Telegraf = require('telegraf')
 const mongo = require('mongodb').MongoClient
 const axios = require('axios')
-const unirest = require('unirest')
+const fs = require('fs')
 const data = require('./data')
+const countries = require('./countries')
 const session = require('telegraf/session')
 const Stage = require('telegraf/stage')
 const Scene = require('telegraf/scenes/base')
@@ -10,11 +11,13 @@ const { leave } = Stage
 const stage = new Stage()
 const bot = new Telegraf(data.token)
 
-const scan = new Scene('scan')
-stage.register(scan)
+
+const scanQR = new Scene('scanQR')
+stage.register(scanQR)
 const generate = new Scene('generate')
 stage.register(generate)
-
+const scanBarcode = new Scene('scanBarcode')
+stage.register(scanBarcode)
 
 mongo.connect(data.mongoLink, {useNewUrlParser: true}, (err, client) => {
   if (err) {
@@ -35,23 +38,85 @@ bot.start((ctx) => {
 
 
 bot.hears('🔍 Scan QR Code', (ctx) => {
-  ctx.scene.enter('scan')
+  ctx.scene.enter('scanQR')
 })
 
 bot.hears('🖊 Generate QR Code', (ctx) => {
   ctx.scene.enter('generate')
 })
 
-scan.enter((ctx) => {
+bot.hears('🔍 Scan Barcode', (ctx) => {
+  ctx.scene.enter('scanBarcode')
+})
+
+bot.hears('📁 Source code', (ctx) => {
+  ctx.reply(
+    'You can see code of this bot on GitHub. Thanks for stars!', 
+    { reply_markup: { inline_keyboard: [[{text: '🔗 GitHub', url: 'https://github.com/Khuzha/oneqrbot'}]] } }
+  )
+})
+
+scanBarcode.enter((ctx) => {
   ctx.reply(
     'I`m ready. Send a picture!', 
     { reply_markup: { keyboard: [['⬅️ Back']], resize_keyboard: true } }
   )
 })
 
+scanBarcode.leave((ctx) => starter(ctx))
+
+scanBarcode.on('photo', async (ctx) => {
+  ctx.replyWithChatAction('typing')
+
+  const imageData = await bot.telegram.getFile(ctx.message.photo[ctx.message.photo.length - 1].file_id)
+  const writer = fs.createWriteStream(data.imagesFolder + imageData.file_path.substr(7))
+
+  axios({
+    method: 'get',
+    url: `https://api.telegram.org/file/bot${data.token}/${imageData.file_path}`,
+    responseType: 'stream'
+  })
+    .then(async (response) => {
+      await response.data.pipe(writer)
+      axios({
+        method: 'get',
+        url: `https://zxing.org/w/decode?u=https://khuzha.tk/barcodes/${imageData.file_path.substr(7)}`
+      })
+        .then((barcodeData) => {
+          const html = barcodeData.data.toString()
+          const start = html.indexOf('<td>Parsed Result</td>') + 31
+          const end = html.indexOf('</pre></td></tr></table>')
+
+          ctx.reply(`Your code is ${html.substring(start, end)}. Soon I'll say you the country of origin of products. Wait please! function is in development still.`)
+        })
+        .catch((err) => {
+          if (err.response.data.includes('No barcode was found in this image')) {
+            return ctx.reply('No data found on this photo. Please try again.')
+          }
+          console.log(2, err)
+          sendError(`error when sending zxing: ${err}`, ctx)
+        })
+    })
+    .catch((err) => {
+      console.log(1, err)
+      ctx.reply('No data found on this photo. Please try again.')
+      sendError(err, ctx)
+    })
+})
+
+scanBarcode.hears('⬅️ Back', (ctx) => {ctx.scene.leave('scanBarcode')})
+
+scanBarcode.leave((ctx) => starter(ctx))
 
 
-scan.on('photo', async (ctx) => {
+scanQR.enter((ctx) => {
+  ctx.reply(
+    'I`m ready. Send a picture!', 
+    { reply_markup: { keyboard: [['⬅️ Back']], resize_keyboard: true } }
+  )
+})
+
+scanQR.on('photo', async (ctx) => {
   ctx.replyWithChatAction('typing')
 
   const imageData = await bot.telegram.getFile(ctx.message.photo[ctx.message.photo.length - 1].file_id)
@@ -79,9 +144,9 @@ scan.on('photo', async (ctx) => {
     })
 })
 
-scan.hears('⬅️ Back', (ctx) => {
+scanQR.hears('⬅️ Back', (ctx) => {
   starter(ctx)
-  ctx.scene.leave('scan')
+  ctx.scene.leave('scanQR')
 })
 
 
@@ -123,11 +188,14 @@ generate.on('text', async (ctx) => {
 
 
 bot.hears('📈 Statistic', async (ctx) => {
+  ctx.replyWithChatAction('typing')
+
   const allUsers = (await db.collection('allUsers').find({}).toArray()).length
   const activeUsers = (await db.collection('allUsers').find({status: 'active'}).toArray()).length
   const blockedUsers = (await db.collection('allUsers').find({status: 'blocked'}).toArray()).length
   const scanned = await db.collection('statistic').find({genAct: 'scanning'}).toArray()
   const generated = await db.collection('statistic').find({genAct: 'generating'}).toArray()
+  const button = (await db.collection('statistic').find({genAct: 'button'}).toArray())[0].count
   let todayScans = +(await db.collection('statistic').find({action: 'scanning'}).toArray())[0][makeDate()]
   let todayGens = +(await db.collection('statistic').find({action: 'generating'}).toArray())[0][makeDate()]
 
@@ -143,11 +211,15 @@ bot.hears('📈 Statistic', async (ctx) => {
     `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
     `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
 
-    `\n\n📅 <strong>Actions today: ${todayScans + todayGens} - ${Math.round((todayScans + todayGens) / (scanned[0].count + generated[0].count)) * 100}% of all</strong>` +
+    `\n\n📅 <strong>Actions today: ${todayScans + todayGens} - ${Math.round((todayScans + todayGens) / (scanned[0].count + generated[0].count) * 100)}% of all</strong>` +
     `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (todayScans + todayGens)) * 100)}%` +
-    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (todayScans + todayGens)) * 100)}%`,
+    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (todayScans + todayGens)) * 100)}%` +
+
+    `\n\n⭕️ This button was pressed ${button} times`,
     {parse_mode: 'html'}
   )
+
+  updateStat('button')
 })
 
 
@@ -175,7 +247,7 @@ bot.command('users', async (ctx) => {
 })
 
 bot.on('message', async (ctx) => {
-  ctx.scene.leave('scan')
+  ctx.scene.leave('scanQR')
   ctx.scene.leave('generator')
   starter(ctx)
 })
@@ -183,8 +255,8 @@ bot.on('message', async (ctx) => {
 
 function starter (ctx) {
   ctx.reply(
-    'Hi! What want you to do?', 
-    { reply_markup: { keyboard: [['🔍 Scan QR Code'], ['🖊 Generate QR Code'], ['📈 Statistic']], resize_keyboard: true } }
+    'Hi! What do you want to do?', 
+    { reply_markup: { keyboard: [['🔍 Scan QR Code'], ['🖊 Generate QR Code'], ['🔍 Scan Barcode'], ['📈 Statistic', '📁 Source code']], resize_keyboard: true } }
   )
 
   updateUser(ctx, true)
@@ -196,6 +268,10 @@ function updateUser (ctx, active) {
 }
 
 function updateStat (action) {
+  if (action == 'button') {
+    return db.collection('statistic').updateOne({genAct: action}, {$inc: {count: 1}}, {new: true, upsert: true})
+  }
+
   db.collection('statistic').updateOne({action: action}, {$inc: {[makeDate()]: 1}}, {new: true, upsert: true})
   db.collection('statistic').updateOne({genAct: action}, {$inc: {count: 1}}, {new: true, upsert: true})
 }
