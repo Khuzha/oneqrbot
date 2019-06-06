@@ -202,18 +202,28 @@ bot.hears('📈 Statistic', async (ctx) => {
   !todayScans ? todayScans = 0 : false
   !todayGens ? todayGens = 0 : false
 
+  let scansPercent = Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)
+  let gensPercent = Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)
+  let todayScansPercent = Math.round((todayScans / (todayScans + todayGens)) * 100)
+  let todayGensPercent = Math.round((todayGens / (todayScans + todayGens)) * 100)
+
+  !scansPercent ? scansPercent = 0 : false
+  !gensPercent ? gensPercent = 0 : false
+  !todayScansPercent ? todayScansPercent = 0 : false
+  !todayGensPercent ? todayGensPercent = 0 : false
+
   ctx.reply(
     `👥 <strong>Total users: ${allUsers}</strong>` +
     `\n🤴 Active users: ${activeUsers} - ${Math.round((activeUsers / allUsers) * 100)}%` +
     `\n🧛‍♂️ Blocked users: ${blockedUsers} - ${Math.round((blockedUsers / allUsers) * 100)}%` +
 
     `\n\n🕹 <strong>All actions: ${scanned[0].count + generated[0].count}</strong>` +
-    `\n📽 Scanned: ${scanned[0].count} times - ${Math.round((scanned[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
-    `\n📤 Generated: ${generated[0].count} times - ${Math.round((generated[0].count / (scanned[0].count + generated[0].count)) * 100)}%` +
+    `\n📽 Scanned: ${scanned[0].count} times - ${scansPercent}%` +
+    `\n📤 Generated: ${generated[0].count} times - ${gensPercent}%` +
 
     `\n\n📅 <strong>Actions today: ${todayScans + todayGens} - ${Math.round((todayScans + todayGens) / (scanned[0].count + generated[0].count) * 100)}% of all</strong>` +
-    `\n📽 Scanned today: ${todayScans} times - ${Math.round((todayScans / (todayScans + todayGens)) * 100)}%` +
-    `\n📤 Generated today: ${todayGens} times - ${Math.round((todayGens / (todayScans + todayGens)) * 100)}%` +
+    `\n📽 Scanned today: ${todayScans} times - ${todayScansPercent}%` +
+    `\n📤 Generated today: ${todayGens} times - ${todayGensPercent}%` +
 
     `\n\n⭕️ This button was pressed ${button} times`,
     {parse_mode: 'html'}
