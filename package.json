@@ -2,7 +2,7 @@
   "name": "oneqrbot",
   "version": "1.0.0",
   "description": "oneqrbot",
-  "main": "index.js",
+  "main": "bot.js",
   "scripts": {
     "test": "nodemon bot.js"
   },
