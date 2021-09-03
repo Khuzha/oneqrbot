@@ -3,11 +3,9 @@ const mongo = require('mongodb').MongoClient
 const axios = require('axios')
 const fs = require('fs')
 const data = require('./data')
-const countries = require('./countries')
 const session = require('telegraf/session')
 const Stage = require('telegraf/stage')
 const Scene = require('telegraf/scenes/base')
-const { leave } = Stage
 const stage = new Stage()
 const bot = new Telegraf(data.token)
 
